@@ -1,0 +1,13 @@
+{
+  "name": "portman",
+  "version": "1.0.0",
+  "description": "Dev-server port manager with a GTK tray: one registry, one source of truth, and a doctor that tells you when they disagree.",
+  "main": "portman.js",
+  "bin": { "portman": "portman.js" },
+  "files": ["portman.js", "portman_tray.py", "install.sh", "uninstall.sh"],
+  "keywords": ["ports", "dev-server", "port-manager", "cli", "gtk", "tray", "localhost"],
+  "author": "Blessing James Siwonde",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/StaticB1/portman.git" },
+  "engines": { "node": ">=16" }
+}
