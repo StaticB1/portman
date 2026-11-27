@@ -30,7 +30,11 @@ else
 fi
 
 # Python3 + GTK + AppIndicator
-if ! /usr/bin/python3 -c "import gi; gi.require_version('Gtk','3.0'); gi.require_version('AppIndicator3','0.1'); gi.require_version('Notify','0.7')" 2>/dev/null; then
+if ! /usr/bin/python3 -c "
+import gi
+gi.require_version('Gtk','3.0'); gi.require_version('Notify','0.7')
+try: gi.require_version('AyatanaAppIndicator3','0.1')
+except ValueError: gi.require_version('AppIndicator3','0.1')" 2>/dev/null; then
     MISSING_APT+=("python3-gi" "python3-gi-cairo" "gir1.2-gtk-3.0" "gir1.2-appindicator3-0.1" "gir1.2-notify-0.7")
 else
     echo "  ✓ python3-gi / GTK3 / AppIndicator3"
@@ -92,7 +96,7 @@ echo "  ✓ CLI: portman"
 # portman-tray wrapper — strips snap-injected env vars
 cat > "$BIN_DIR/portman-tray" <<TRAY_EOF
 #!/usr/bin/env bash
-# portman-tray [start|stop|restart|status]
+# portman-tray [start|stop|restart|status|show]
 
 PIDFILE="/tmp/portman-tray.pid"
 PYTHON="env -u LD_LIBRARY_PATH -u GTK_EXE_PREFIX -u GTK_PATH -u GDK_PIXBUF_MODULE_FILE -u GSETTINGS_SCHEMA_DIR /usr/bin/python3"
@@ -135,6 +139,16 @@ cmd_stop() {
 
 cmd_restart() { cmd_stop; sleep 0.5; cmd_start; }
 
+# Open the window. A second copy hands the request to the one in the tray and exits.
+cmd_show() {
+  if ! is_running; then
+    \$PYTHON "$INSTALL_DIR/portman_tray.py" --show > /dev/null 2>&1 &
+    echo \$! > "\$PIDFILE"
+    return 0
+  fi
+  \$PYTHON "$INSTALL_DIR/portman_tray.py" --show > /dev/null 2>&1
+}
+
 cmd_status() {
   if is_running; then
     echo "✔ portman tray is running (pid \$(cat \$PIDFILE 2>/dev/null || pgrep -f portman_tray.py))"
@@ -148,7 +162,8 @@ case "\${1:-start}" in
   stop)    cmd_stop ;;
   restart) cmd_restart ;;
   status)  cmd_status ;;
-  *) echo "Usage: portman-tray [start|stop|restart|status]"; exit 1 ;;
+  show)    cmd_show ;;
+  *) echo "Usage: portman-tray [start|stop|restart|status|show]"; exit 1 ;;
 esac
 TRAY_EOF
 chmod +x "$BIN_DIR/portman-tray"
@@ -181,7 +196,7 @@ cat > "$APPS_DIR/$APP_ID.desktop" <<EOF
 Type=Application
 Name=portman
 Comment=Dev server port manager
-Exec=$BIN_DIR/portman-tray start
+Exec=$BIN_DIR/portman-tray show
 Terminal=false
 Categories=Development;Utility;
 Keywords=port;dev;server;
@@ -203,6 +218,7 @@ echo "╔═══════════════════════�
 echo "║   ✓ portman installed successfully!      ║"
 echo "║                                          ║"
 echo "║   CLI:   portman list                    ║"
+echo "║   Window: portman ui                     ║"
 echo "║   Tray:  portman tray start              ║"
 echo "║   Stop:  portman tray stop               ║"
 echo "║                                          ║"

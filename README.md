@@ -7,7 +7,7 @@ servers, tells you who is squatting on a port, and — the part that makes it wo
 audits its own registry against the file you consider authoritative, so a stale entry gets reported
 instead of silently doing nothing.
 
-It ships with a GTK tray applet for Linux desktops.
+It ships with a GTK tray and window for Linux desktops (see [The tray](#the-tray)).
 
 ```
 $ portman list
@@ -42,7 +42,8 @@ and refuses to start, rather than assuming.
 ## Install
 
 Requires Node.js ≥ 16. The tray additionally needs Python 3 with GTK 3, AppIndicator3 and Notify
-(`python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-appindicator3-0.1 gir1.2-notify-0.7`).
+(`python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-notify-0.7`, and either
+`gir1.2-ayatanaappindicator3-0.1` or `gir1.2-appindicator3-0.1`).
 
 ```sh
 git clone https://github.com/StaticB1/portman.git
@@ -65,6 +66,10 @@ Linux/GTK only.
 portman add blog 3022 ~/code/blog -- npm run dev   # register a service
 portman add storefront web 3012 ~/code/storefront/web  # register one inside a group
 portman start blog                                 # foreground
+portman start blog --detach                        # background → ~/.portman-logs/blog.log
+portman logs blog -f                               # follow that log
+portman open blog                                  # open it in your browser
+portman ui                                         # the window: search, start, stop
 portman start storefront                             # whole group, detached → ~/.portman-logs/
 portman stop storefront
 portman check 3012                                 # who is on this port
@@ -73,9 +78,31 @@ portman status                                      # every listening port on th
 portman port blog                                   # just the number, for scripts
 ```
 
-`portman list --json` and `portman doctor --json` are meant for scripting and CI.
+`portman list --running` shows only what is up. `portman list --json` and `portman doctor --json`
+are meant for scripting and CI.
 
 Full command list: `portman help`.
+
+## The tray
+
+With thirty projects, a menu that lists all of them is a wall. So the tray menu shows only what you
+would reach for: what is **running**, what you **pinned**, and what you **started last**. Each has
+Open in browser, Start or Stop, Restart and View log.
+
+Everything else is in the window (**Open portman…** in the menu, a middle-click on the icon, or
+`portman ui`):
+
+- **Search** by name, port or folder. Just start typing. Enter opens a running service in the
+  browser, or starts a stopped one.
+- Rows are sorted **Running**, **Pinned**, **Not running**, and a **Running** filter hides the rest.
+- The **⋮** on a row has Restart, View log, Copy address, Open folder, Open terminal here, Pin,
+  Edit and Remove.
+- A start that fails says why, with the last lines the command printed and a **View log** button.
+- A port held by some other program is shown as such, in amber, and portman asks before ending it.
+- **Check the registry** (☰ menu) runs `portman doctor` and can load ports from the inventory file.
+
+Servers started from the tray run with your shell's environment (so `nvm`, `pyenv` and friends
+resolve), log to `~/.portman-logs/<name>.log`, and keep running when the tray quits.
 
 ## The inventory file
 
@@ -142,7 +169,8 @@ The assigned port is injected into the command where the framework expects it.
 | --- | --- |
 | `~/.portman.json` | The registry. A corrupt one is refused, never silently reset. |
 | `~/.portman.json.bak` | Previous good registry, written before each save. |
-| `~/.portman-logs/` | Output from detached group starts. |
+| `~/.portman-logs/` | Output from detached starts, from the CLI or the tray. |
+| `~/.portman-tray.json` | The tray's pins and recently started list. |
 | `~/.local/share/portman/` | Installed copy. |
 
 ## License

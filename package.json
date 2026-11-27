@@ -1,6 +1,6 @@
 {
   "name": "portman",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Dev-server port manager with a GTK tray: one registry, one source of truth, and a doctor that tells you when they disagree.",
   "main": "portman.js",
   "bin": { "portman": "portman.js" },

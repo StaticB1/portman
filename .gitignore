@@ -2,3 +2,4 @@ node_modules/
 *.log
 .portman.json
 .portman.json.bak
+__pycache__/

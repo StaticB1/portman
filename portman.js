@@ -462,7 +462,11 @@ function cmdRename(args) {
 
 function cmdList(args = []) {
   const reg = loadRegistry();
-  const projects = Object.entries(reg.projects);
+  let projects = Object.entries(reg.projects);
+  if (args.includes('--running')) {
+    projects = projects.filter(([, p]) => probePort(p.port).state === 'busy');
+    reg.projects = Object.fromEntries(projects);
+  }
 
   if (args.includes('--json')) {
     console.log(JSON.stringify({
@@ -479,7 +483,9 @@ function cmdList(args = []) {
     return;
   }
   if (projects.length === 0) {
-    console.log(clr('gray', 'No projects registered. Use: portman add <name> <port> [dir]'));
+    console.log(clr('gray', args.includes('--running')
+      ? 'Nothing is running.'
+      : 'No projects registered. Use: portman add <name> <port> [dir]'));
     return;
   }
 
@@ -788,9 +794,10 @@ function doStartDetached(name, { force = false } = {}) {
 
 function cmdStart(args) {
   const force = args.includes('--force');
-  const rest = args.filter(a => a !== '--force');
+  const detach = args.includes('--detach');
+  const rest = args.filter(a => a !== '--force' && a !== '--detach');
   const [name, ...cmdArgs] = rest;
-  if (!name) { console.error(clr('red', 'Usage: portman start <name|group> [command...] [--force]')); process.exit(1); }
+  if (!name) { console.error(clr('red', 'Usage: portman start <name|group> [command...] [--detach] [--force]')); process.exit(1); }
   const reg = loadRegistry();
   const members = resolveGroup(reg, name);
   if (members.length === 0) { console.error(clr('red', `Unknown project or group: ${name}`)); process.exit(1); }
@@ -809,7 +816,54 @@ function cmdStart(args) {
     console.log(clr('green', `✔ All ${members.length} services started. Stop them with: portman stop ${name}`));
     return;
   }
+  if (detach) {
+    if (!doStartDetached(members[0][0], { force })) process.exit(1);
+    return;
+  }
   doStart(members[0][0], cmdArgs, { force });
+}
+
+function logFileOf(name) {
+  return path.join(os.homedir(), '.portman-logs', `${name.replace(/[^\w.-]/g, '_')}.log`);
+}
+
+// Output of a service started detached, from here or from the tray.
+function cmdLogs(args) {
+  const follow = args.includes('-f') || args.includes('--follow');
+  const nIdx = args.indexOf('-n');
+  const count = nIdx >= 0 ? String(parseInt(args[nIdx + 1]) || 50) : '50';
+  const [name] = args.filter((a, i) => !a.startsWith('-') && !(nIdx >= 0 && i === nIdx + 1));
+  if (!name) { console.error(clr('red', 'Usage: portman logs <name> [-f] [-n lines]')); process.exit(1); }
+  const reg = loadRegistry();
+  const [key] = findProject(reg, name);
+  if (!key) { console.error(clr('red', `Unknown project: ${name}`)); process.exit(1); }
+  const file = logFileOf(key);
+  if (!fs.existsSync(file)) {
+    console.error(clr('yellow', `No log for ${key} yet.`));
+    console.error(clr('gray', `  One is written when it is started with --detach, as a group, or from the tray.`));
+    process.exit(1);
+  }
+  const result = spawnSync('tail', ['-n', count, ...(follow ? ['-f'] : []), file], { stdio: 'inherit' });
+  process.exit(result.status ?? 0);
+}
+
+function cmdOpen(args) {
+  const [name] = args;
+  if (!name) { console.error(clr('red', 'Usage: portman open <name>')); process.exit(1); }
+  const reg = loadRegistry();
+  const [key, proj] = findProject(reg, name);
+  if (!proj) { console.error(clr('red', `Unknown project: ${name}`)); process.exit(1); }
+  const url = `http://localhost:${proj.port}`;
+  if (probePort(proj.port).state === 'free') {
+    console.log(clr('yellow', `${key} is not running. Start it with: portman start ${key} --detach`));
+  }
+  const opener = process.platform === 'darwin' ? 'open' : 'xdg-open';
+  const result = spawnSync(opener, [url], { stdio: 'ignore' });
+  if (result.error || result.status !== 0) {
+    console.error(clr('red', `✘ Could not open a browser. The address is ${url}`));
+    process.exit(1);
+  }
+  console.log(`${clr('green', '✔')} Opened ${url}`);
 }
 
 function cmdStop(args) {
@@ -888,6 +942,10 @@ function cmdPort(args) {
 function cmdTray(args) {
   const sub = args[0] || 'start';
   const result = spawnSync('portman-tray', [sub], { stdio: 'inherit' });
+  if (result.error) {
+    console.error(clr('red', '✘ portman-tray is not installed. Run install.sh from the portman repo.'));
+    process.exit(1);
+  }
   process.exit(result.status ?? 0);
 }
 
@@ -1389,16 +1447,20 @@ ${bold('COMMANDS')}
   ${clr('cyan', 'set')} <name> <cmd...>                      Save the start command for a service
   ${clr('cyan', 'remove')} <name|group>                      Remove service or whole group (stops first)
   ${clr('cyan', 'rename')} <old> <new>                       Rename a service
-  ${clr('cyan', 'list')} [--json]                            List all projects grouped
+  ${clr('cyan', 'list')} [--running] [--json]                List all projects grouped
   ${clr('cyan', 'status')}                                   Show all active listening ports
   ${clr('cyan', 'check')} <port>                             Check who is using a port
   ${clr('cyan', 'start')} <name|group> [cmd] [--force]       Start service, or all services in a group
+  ${clr('gray', '   --detach runs a single service in the background, logging to ~/.portman-logs/')}
+  ${clr('cyan', 'logs')} <name> [-f] [-n lines]              Show a detached service's output
+  ${clr('cyan', 'open')} <name>                              Open the service in your browser
   ${clr('cyan', 'stop')} <name|group> [--force]              Stop service or all services in group
   ${clr('cyan', 'restart')} <name|group>                     Restart service or group
   ${clr('cyan', 'kill')} <port|name> [--force]               Kill whatever is on a port
   ${clr('cyan', 'free')} <name> [--force]                    Free the registered port
   ${clr('cyan', 'port')} <name>                              Print port number (for scripting)
-  ${clr('cyan', 'tray')} [start|stop|restart|status]         Manage the system tray app
+  ${clr('cyan', 'ui')}                                       Open the portman window (search, start, stop)
+  ${clr('cyan', 'tray')} [start|stop|restart|status|show]    Manage the system tray app
   ${clr('cyan', 'uninstall')}                                Remove portman from this system
 
 ${bold('EXAMPLES')}
@@ -1412,7 +1474,8 @@ ${bold('EXAMPLES')}
   portman stop storefront
 
 ${bold('NOTES')}
-  A group start runs detached; a single service runs in the foreground.
+  A group start runs detached; a single service runs in the foreground unless
+  you pass --detach.
   System and database ports are protected from ${clr('cyan', 'kill')} unless you pass --force.
   If ss and lsof are both unavailable, portman reports ${clr('yellow', 'unknown')} and refuses
   to start rather than assuming a port is free.
@@ -1448,6 +1511,10 @@ switch (cmd) {
   case 'sync':      cmdSync(args); break;
   case 'scope':     cmdScope(args); break;
   case 'tray':      cmdTray(args); break;
+  case 'ui':        cmdTray(['show']); break;
+  case 'logs':
+  case 'log':       cmdLogs(args); break;
+  case 'open':      cmdOpen(args); break;
   case 'uninstall': cmdUninstall(); break;
   case 'help':
   case '--help':
